@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Arcade Wi-Fi setup</title>
+<!-- Arcade tower Wi-Fi setup over Bluetooth (Android Chrome). Opened from the QR code on the dial:
+     ?k=<one-time code>&n=<tower id>. Source: arcade-tower/setup-page/index.html. UUIDs must match
+     firmware/dial/src/ble_setup.h. No tracking, no external requests. -->
+<style>
+  :root { --bg:#04060B; --card:#0E1118; --line:#2C3142; --text:#EEF3FF; --muted:#A8B0C4; --accent:#7DF9FF; --good:#7DFFB2; --bad:#FF6F7D; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:17px/1.5 system-ui,-apple-system,sans-serif; }
+  main { max-width:440px; margin:0 auto; padding:32px 18px; display:flex; flex-direction:column; gap:18px; }
+  h1 { font-size:24px; letter-spacing:.06em; margin:0; }
+  p { margin:0; color:var(--muted); }
+  .card { border:1px solid var(--line); border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:14px; background:var(--card); }
+  label { display:flex; flex-direction:column; gap:6px; font-size:14px; color:var(--muted); }
+  input[type=text], input[type=password] { font:inherit; font-size:18px; padding:14px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--text); width:100%; }
+  .row { flex-direction:row; align-items:center; gap:10px; font-size:16px; }
+  .row input { width:22px; height:22px; }
+  button { font:inherit; font-weight:700; font-size:18px; padding:16px; border-radius:12px; border:0; background:var(--accent); color:var(--bg); width:100%; }
+  button:disabled { opacity:.5; }
+  a { color:var(--accent); }
+  .msg { font-size:16px; }
+  .good { color:var(--good); } .bad { color:var(--bad); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Arcade Wi-Fi</h1>
+
+  <section id="start" class="card">
+    <p>Tap the button, then pick <b id="devName">your arcade</b> in the list that pops up.</p>
+    <button id="connect">Connect to arcade</button>
+    <p class="msg" id="startMsg"></p>
+  </section>
+
+  <section id="noBt" class="card" hidden>
+    <p class="msg" id="noBtMsg"></p>
+  </section>
+
+  <form id="pw" class="card" hidden>
+    <p id="pwFor">Password for your Wi-Fi</p>
+    <label id="ssidWrap" hidden>Wi-Fi name<input id="ssid" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></label>
+    <label>Password<input id="pass" type="password" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></label>
+    <label class="row"><input id="show" type="checkbox">Show password</label>
+    <button id="send" type="submit">Connect</button>
+    <p class="msg" id="pwMsg"></p>
+  </form>
+
+  <section id="checking" class="card" hidden>
+    <p class="msg"><b>Checking the password on the arcade.</b></p>
+    <p>Look at the arcade's screen. If it says <b>Connected</b>, you're done and can close this page.</p>
+    <p>If it says the password didn't work, tap Try again.</p>
+    <button id="retry">Try again</button>
+    <p class="msg" id="retryMsg"></p>
+  </section>
+</main>
+<script>
+const SVC = '7a3f0001-5c2e-4b8a-9d61-0e4c3a2b1f00';
+const SSID_CHR = '7a3f0002-5c2e-4b8a-9d61-0e4c3a2b1f00';
+const CMD_CHR = '7a3f0003-5c2e-4b8a-9d61-0e4c3a2b1f00';
+const STATUS_CHR = '7a3f0004-5c2e-4b8a-9d61-0e4c3a2b1f00';
+
+const $ = id => document.getElementById(id);
+const q = new URLSearchParams(location.search);
+const code = q.get('k') || '';
+const tower = (q.get('n') || '').replace(/[^A-Za-z0-9-]/g, '');
+let cmdChr = null, device = null, needSsid = false, sent = false;
+
+if (tower) $('devName').textContent = tower;
+
+function show(id) { for (const s of ['start', 'noBt', 'pw', 'checking']) $(s).hidden = s !== id; }
+
+const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+if (!code) {
+  show('noBt');
+  $('noBtMsg').textContent = 'Scan the QR code on the arcade to open this page.';
+} else if (isIos) {
+  show('noBt');
+  $('noBtMsg').innerHTML = 'This page is for Android phones. On the arcade, go back and choose <b>IPHONE</b>.';
+} else if (!navigator.bluetooth) {
+  show('noBt');
+  const intent = 'intent://' + location.host + location.pathname + location.search + '#Intent;scheme=https;package=com.android.chrome;end';
+  $('noBtMsg').innerHTML = 'This browser can\'t use Bluetooth. <a href="' + intent + '">Open this page in Chrome</a>.';
+}
+
+// Status from the arcade. While it checks a password its Bluetooth is off (it needs the memory for
+// Wi-Fi), so after sending, the page waits on the "checking" card; a failed check brings Bluetooth back.
+function status(text) {
+  if (text === 'checking') {
+    sent = true;
+    show('checking');
+  } else if (text.startsWith('failed:')) {
+    show('pw');
+    $('pwMsg').className = 'msg bad'; $('pwMsg').textContent = text.slice(7);
+    $('send').disabled = false;
+  }
+}
+
+// Connect to the picked arcade (again), read the network and the latest status.
+async function attach() {
+  const gatt = await device.gatt.connect();
+  const svc = await gatt.getPrimaryService(SVC);
+  const ssid = new TextDecoder().decode(await (await svc.getCharacteristic(SSID_CHR)).readValue());
+  cmdChr = await svc.getCharacteristic(CMD_CHR);
+  const st = await svc.getCharacteristic(STATUS_CHR);
+  st.addEventListener('characteristicvaluechanged', e => status(new TextDecoder().decode(e.target.value)));
+  await st.startNotifications();
+  needSsid = !ssid;
+  $('ssidWrap').hidden = !needSsid;
+  $('pwFor').innerHTML = needSsid ? 'Type your Wi-Fi name and password' : 'Password for <b></b>';
+  if (!needSsid) $('pwFor').querySelector('b').textContent = ssid;
+  show('pw');
+  $('pwMsg').textContent = '';
+  $('send').disabled = false;
+  status(new TextDecoder().decode(await st.readValue()));
+  if ($('pw').hidden === false) (needSsid ? $('ssid') : $('pass')).focus();
+}
+
+$('connect').onclick = async () => {
+  $('startMsg').className = 'msg'; $('startMsg').textContent = 'Looking for your arcade...';
+  try {
+    device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SVC] }] });
+    device.addEventListener('gattserverdisconnected', () => {
+      if (sent) { show('checking'); return; }   // expected: the arcade is checking the password
+      show('start');
+      $('startMsg').className = 'msg bad';
+      $('startMsg').textContent = 'Lost the connection. Keep the phone near the arcade and tap Connect again.';
+    });
+    await attach();
+  } catch (err) {
+    $('startMsg').className = 'msg bad';
+    $('startMsg').textContent = err && err.name === 'NotFoundError'
+      ? 'No arcade picked. Make sure the arcade shows the QR code and Bluetooth is on, then try again.'
+      : 'Couldn\'t connect (' + (err && err.message || err) + '). Tap Connect to try again.';
+  }
+};
+
+$('retry').onclick = async () => {
+  $('retryMsg').className = 'msg'; $('retryMsg').textContent = 'Connecting...';
+  sent = false;
+  try {
+    await attach();
+    $('retryMsg').textContent = '';
+  } catch (err) {
+    sent = true;
+    $('retryMsg').className = 'msg bad';
+    $('retryMsg').textContent = 'The arcade isn\'t ready yet. Wait until its screen shows the code again, then tap Try again.';
+  }
+};
+
+$('show').onchange = () => { $('pass').type = $('show').checked ? 'text' : 'password'; };
+
+$('pw').onsubmit = async e => {
+  e.preventDefault();
+  if (needSsid && !$('ssid').value.trim()) { $('pwMsg').className = 'msg bad'; $('pwMsg').textContent = 'Type the Wi-Fi name.'; return; }
+  $('send').disabled = true;
+  $('pwMsg').className = 'msg'; $('pwMsg').textContent = 'Sending...';
+  let msg = code + '\n' + $('pass').value;
+  if (needSsid) msg += '\n' + $('ssid').value.trim();
+  try {
+    sent = true;
+    await cmdChr.writeValueWithResponse(new TextEncoder().encode(msg));
+  } catch (err) {
+    sent = false;
+    $('pwMsg').className = 'msg bad'; $('pwMsg').textContent = 'Couldn\'t send it. Tap Connect again.';
+    $('send').disabled = false;
+  }
+};
+</script>
+</body>
+</html>
