@@ -1,17 +1,17 @@
 {
-  "release": "r-d29-p17",
+  "release": "r-d46-p31",
   "date": "2026-11-04",
-  "notes": "Stability fixes and safer updates",
+  "notes": "Starfall, high scores, voice lines and stability fixes",
   "dial": {
-    "version": 29,
-    "url": "https://engelsbonilla.github.io/arcade-tower-firmware/releases/r-d29-p17/dial.bin",
-    "size": 1831888,
-    "sha256": "55cb8be6271b9b157ba65bbfd64a60f068a2d4653503f5f155ee452f224c1b9a"
+    "version": 46,
+    "url": "https://engelsbonilla.github.io/arcade-tower-firmware/releases/r-d46-p31/dial.bin",
+    "size": 1839360,
+    "sha256": "d112e1e0025b5db4c2af9e5a27f7bcfbdd3faf6f1600053e70c36a69e0e3db76"
   },
   "leds": {
-    "version": 17,
-    "url": "https://engelsbonilla.github.io/arcade-tower-firmware/releases/r-d29-p17/leds.bin",
-    "size": 2236096,
-    "sha256": "b3813a52739bc548f060efe9eede78dfc87893c98ccd5490db9d0f4f0f494d52"
+    "version": 31,
+    "url": "https://engelsbonilla.github.io/arcade-tower-firmware/releases/r-d46-p31/leds.bin",
+    "size": 2575600,
+    "sha256": "eff2789a1608c777423740e5c2d084c7a58e842039dacaf2d0c5d4b5bd27183b"
   }
 }

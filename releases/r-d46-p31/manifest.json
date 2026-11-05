@@ -1,0 +1,17 @@
+{
+  "release": "r-d46-p31",
+  "date": "2026-11-04",
+  "notes": "Starfall, high scores, voice lines and stability fixes",
+  "dial": {
+    "version": 46,
+    "url": "https://engelsbonilla.github.io/arcade-tower-firmware/releases/r-d46-p31/dial.bin",
+    "size": 1839360,
+    "sha256": "d112e1e0025b5db4c2af9e5a27f7bcfbdd3faf6f1600053e70c36a69e0e3db76"
+  },
+  "leds": {
+    "version": 31,
+    "url": "https://engelsbonilla.github.io/arcade-tower-firmware/releases/r-d46-p31/leds.bin",
+    "size": 2575600,
+    "sha256": "eff2789a1608c777423740e5c2d084c7a58e842039dacaf2d0c5d4b5bd27183b"
+  }
+}
